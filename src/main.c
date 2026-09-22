@@ -1,5 +1,6 @@
 #include<stdio.h>
 #include<string.h>
+#include "bmp.h"
 
 int main(int argc, char*argv[])
 {
@@ -25,8 +26,15 @@ int main(int argc, char*argv[])
 
     if(strcmp(argv[1],"info")==0)
     {
-        printf("INFO command selected.\n");
+        if(argc<3)
+        {
+            printf("Usage: pixelvault info <image.bmp>\n");
+            return 1;
+        }
+        
+        return read_bmp_info(argv[2]);
     }
+    
     else if(strcmp(argv[1],"hide")==0)
     {
         printf("HIDE command selected.\n");
