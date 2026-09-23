@@ -2,6 +2,7 @@
 #include<string.h>
 #include "bmp.h"
 #include "pixel.h"
+#include "encoder.h"
 
 int main(int argc, char*argv[])
 {
@@ -36,10 +37,20 @@ int main(int argc, char*argv[])
         return read_bmp_info(argv[2]);
     }
     
-    else if(strcmp(argv[1],"hide")==0)
+    else if (strcmp(argv[1], "hide") == 0)
     {
-        printf("HIDE command selected.\n");
-    }
+        if (argc < 5)
+        {
+            printf("Usage: pixelvault hide <input.bmp> <output.bmp> <message>\n");
+            return 1;
+        }
+
+        return hide_message(
+            argv[2],
+            argv[3],
+            argv[4]
+         );
+    }   
     else if (strcmp(argv[1], "analyze") == 0)
     {
         if (argc < 3)
