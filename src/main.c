@@ -1,6 +1,7 @@
 #include<stdio.h>
 #include<string.h>
 #include "bmp.h"
+#include "pixel.h"
 
 int main(int argc, char*argv[])
 {
@@ -39,9 +40,14 @@ int main(int argc, char*argv[])
     {
         printf("HIDE command selected.\n");
     }
-    else if(strcmp(argv[1],"extract")==0)
+    else if (strcmp(argv[1], "analyze") == 0)
     {
-        printf("EXTRACT command selected.\n");
+        if (argc < 3)
+        {
+            printf("Usage: pixelvault analyze <image.bmp>\n");
+            return 1;
+        }
+        return analyze_pixels(argv[2]);
     }
     else if(strcmp(argv[1],"capacity")==0)
     {
