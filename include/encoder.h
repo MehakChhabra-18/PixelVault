@@ -11,4 +11,8 @@ int hide_message(
     const char *message
 );
 
+int extract_message(
+    const char *filename
+);
+
 #endif

@@ -1,7 +1,19 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
 #include "bmp.h"
 #include "encoder.h"
 
+
+/*
+ * Calculate how many bytes of secret data
+ * can be stored in the image.
+ *
+ * We use 1 bit from every actual pixel byte.
+ *
+ * 8 pixel bytes = 1 message byte.
+ */
 int calculate_capacity(const char *filename)
 {
     FILE *file = fopen(filename, "rb");
@@ -36,14 +48,24 @@ int calculate_capacity(const char *filename)
     int width = info_header.width;
     int height = info_header.height;
 
-    int bytes_per_row = width * 3;
+    /*
+     * Every pixel has:
+     *
+     * Blue  = 1 byte
+     * Green = 1 byte
+     * Red   = 1 byte
+     *
+     * Therefore:
+     *
+     * 3 bytes per pixel.
+     */
+    int pixel_bytes = width * height * 3;
 
-    int padding = (4 - (bytes_per_row % 4)) % 4;
-
-    int total_pixel_bytes =
-        (bytes_per_row + padding) * height;
-
-    int capacity = total_pixel_bytes / 8;
+    /*
+     * 8 pixel bytes are required
+     * to store 1 message byte.
+     */
+    int capacity = pixel_bytes / 8;
 
     printf("\n");
     printf("========================================\n");
@@ -53,7 +75,7 @@ int calculate_capacity(const char *filename)
     printf("Image            : %s\n", filename);
     printf("Width            : %d pixels\n", width);
     printf("Height           : %d pixels\n", height);
-    printf("Pixel Bytes      : %d\n", total_pixel_bytes);
+    printf("Pixel Bytes      : %d\n", pixel_bytes);
     printf("Message Capacity : %d bytes\n", capacity);
 
     printf("\n========================================\n");
@@ -63,6 +85,15 @@ int calculate_capacity(const char *filename)
     return capacity;
 }
 
+
+/*
+ * Hide a message inside a BMP image.
+ *
+ * Format stored inside image:
+ *
+ * [32-bit message length]
+ * [message bytes]
+ */
 int hide_message(
     const char *input_filename,
     const char *output_filename,
@@ -92,23 +123,36 @@ int hide_message(
     fread(&file_header, sizeof(BMPFileHeader), 1, input);
     fread(&info_header, sizeof(BMPInfoHeader), 1, input);
 
+    /*
+     * Validate BMP.
+     */
     if (file_header.signature != 0x4D42)
     {
         printf("Error: Invalid BMP file.\n");
+
         fclose(input);
         fclose(output);
+
         return 1;
     }
 
     if (info_header.bits_per_pixel != 24 ||
         info_header.compression != 0)
     {
-        printf("Error: Only uncompressed 24-bit BMP files are supported.\n");
+        printf(
+            "Error: Only uncompressed 24-bit BMP files are supported.\n"
+        );
+
         fclose(input);
         fclose(output);
+
         return 1;
     }
 
+
+    /*
+     * Calculate message length.
+     */
     int message_length = 0;
 
     while (message[message_length] != '\0')
@@ -116,74 +160,161 @@ int hide_message(
         message_length++;
     }
 
+
+    /*
+     * Calculate capacity.
+     */
     int capacity = calculate_capacity(input_filename);
 
-    if (message_length > capacity)
+    if (capacity < 0)
     {
-        printf("Error: Message is too large for this image.\n");
         fclose(input);
         fclose(output);
+
         return 1;
     }
 
+
     /*
-     * Copy BMP headers to output.
+     * We need 4 extra bytes to store
+     * the message length.
      */
-
-    fseek(input, 0, SEEK_SET);
-
-    unsigned char header_byte;
-
-    for (int i = 0; i < file_header.pixel_data_offset; i++)
+    if (message_length + 4 > capacity)
     {
-        fread(&header_byte, 1, 1, input);
-        fwrite(&header_byte, 1, 1, output);
+        printf("\n");
+        printf("Error: Message is too large for this image.\n");
+        printf("Required : %d bytes\n", message_length + 4);
+        printf("Available: %d bytes\n", capacity);
+
+        fclose(input);
+        fclose(output);
+
+        return 1;
     }
 
+
     /*
-     * Encode message.
+     * Copy everything before pixel data
+     * exactly as it is.
      */
+    fseek(input, 0, SEEK_SET);
 
-    int message_index = 0;
-    int bit_index = 0;
+    unsigned char byte;
 
-    unsigned char pixel_byte;
-
-    for (int i = 0;
-         i < message_length * 8;
+    for (uint32_t i = 0;
+         i < file_header.pixel_data_offset;
          i++)
     {
-        fread(&pixel_byte, 1, 1, input);
+        fread(&byte, 1, 1, input);
+        fwrite(&byte, 1, 1, output);
+    }
 
-        unsigned char current_bit =
-            (message[message_index] >> (7 - bit_index)) & 1;
 
-        pixel_byte =
-            (pixel_byte & 0xFE) | current_bit;
+    /*
+     * Move to actual pixel data.
+     */
+    fseek(input, file_header.pixel_data_offset, SEEK_SET);
 
-        fwrite(&pixel_byte, 1, 1, output);
+    /*
+     * Skip to output pixel position.
+     *
+     * The output file is already positioned
+     * after the copied header.
+     */
 
-        bit_index++;
 
-        if (bit_index == 8)
+    /*
+     * ------------------------------------------------
+     * STORE MESSAGE LENGTH
+     * ------------------------------------------------
+     *
+     * Message length is stored using 32 bits.
+     */
+    uint32_t length = (uint32_t)message_length;
+
+    for (int bit_index = 31;
+         bit_index >= 0;
+         bit_index--)
+    {
+        fread(&byte, 1, 1, input);
+
+        unsigned char bit =
+            (length >> bit_index) & 1;
+
+        /*
+         * Clear the LSB.
+         */
+        byte = byte & 0xFE;
+
+        /*
+         * Put our secret bit into LSB.
+         */
+        byte = byte | bit;
+
+        fwrite(&byte, 1, 1, output);
+    }
+
+
+    /*
+     * ------------------------------------------------
+     * STORE MESSAGE
+     * ------------------------------------------------
+     */
+    for (int char_index = 0;
+         char_index < message_length;
+         char_index++)
+    {
+        unsigned char current_char =
+            (unsigned char)message[char_index];
+
+        /*
+         * Store 8 bits of the character.
+         */
+        for (int bit_index = 7;
+             bit_index >= 0;
+             bit_index--)
         {
-            bit_index = 0;
-            message_index++;
+            fread(&byte, 1, 1, input);
+
+            unsigned char bit =
+                (current_char >> bit_index) & 1;
+
+            /*
+             * Clear existing LSB.
+             */
+            byte = byte & 0xFE;
+
+            /*
+             * Insert secret bit.
+             */
+            byte = byte | bit;
+
+            fwrite(&byte, 1, 1, output);
         }
     }
 
-    /*
-     * Copy remaining image data unchanged.
-     */
 
-    while (fread(&pixel_byte, 1, 1, input) == 1)
+    /*
+     * ------------------------------------------------
+     * COPY REMAINING IMAGE DATA
+     * ------------------------------------------------
+     *
+     * Everything after the encoded data remains
+     * unchanged.
+     */
+    while (fread(&byte, 1, 1, input) == 1)
     {
-        fwrite(&pixel_byte, 1, 1, output);
+        fwrite(&byte, 1, 1, output);
     }
+
 
     fclose(input);
     fclose(output);
 
+
+    /*
+     * Success message.
+     */
     printf("\n");
     printf("========================================\n");
     printf("       PIXELVAULT - HIDE\n");
@@ -198,6 +329,227 @@ int hide_message(
     printf("Output saved to: %s\n", output_filename);
 
     printf("\n========================================\n");
+
+    return 0;
+}
+
+
+/*
+ * Extract a hidden message from a BMP image.
+ */
+int extract_message(const char *filename)
+{
+    FILE *file = fopen(filename, "rb");
+
+    if (file == NULL)
+    {
+        printf("Error: Could not open image.\n");
+        return 1;
+    }
+
+
+    BMPFileHeader file_header;
+    BMPInfoHeader info_header;
+
+    fread(&file_header, sizeof(BMPFileHeader), 1, file);
+    fread(&info_header, sizeof(BMPInfoHeader), 1, file);
+
+
+    /*
+     * Validate BMP.
+     */
+    if (file_header.signature != 0x4D42)
+    {
+        printf("Error: Invalid BMP file.\n");
+
+        fclose(file);
+
+        return 1;
+    }
+
+    if (info_header.bits_per_pixel != 24 ||
+        info_header.compression != 0)
+    {
+        printf(
+            "Error: Only uncompressed 24-bit BMP files are supported.\n"
+        );
+
+        fclose(file);
+
+        return 1;
+    }
+
+
+    /*
+     * Move to pixel data.
+     */
+    fseek(
+        file,
+        file_header.pixel_data_offset,
+        SEEK_SET
+    );
+
+
+    /*
+     * ------------------------------------------------
+     * READ MESSAGE LENGTH
+     * ------------------------------------------------
+     *
+     * First 32 pixel LSBs contain
+     * the message length.
+     */
+    uint32_t message_length = 0;
+
+    for (int bit_index = 31;
+         bit_index >= 0;
+         bit_index--)
+    {
+        unsigned char byte;
+
+        if (fread(&byte, 1, 1, file) != 1)
+        {
+            printf("Error: Could not read hidden data.\n");
+
+            fclose(file);
+
+            return 1;
+        }
+
+        unsigned char bit = byte & 1;
+
+        message_length =
+            message_length |
+            ((uint32_t)bit << bit_index);
+    }
+
+
+    /*
+     * Basic validation.
+     */
+    if (message_length == 0)
+    {
+        printf("No hidden message found.\n");
+
+        fclose(file);
+
+        return 1;
+    }
+
+
+    /*
+     * Prevent unreasonable memory allocation.
+     */
+    if (message_length > 1000000)
+    {
+        printf("Error: Invalid hidden message.\n");
+
+        fclose(file);
+
+        return 1;
+    }
+
+
+    /*
+     * Make sure message can actually fit
+     * inside the image.
+     */
+    int capacity = calculate_capacity(filename);
+
+    if (capacity < 0 ||
+        message_length + 4 > (uint32_t)capacity)
+    {
+        printf("Error: Invalid or corrupted hidden message.\n");
+
+        fclose(file);
+
+        return 1;
+    }
+
+
+    /*
+     * Allocate memory for message.
+     *
+     * +1 is for '\0'.
+     */
+    char *message =
+        (char *)malloc(message_length + 1);
+
+    if (message == NULL)
+    {
+        printf("Error: Memory allocation failed.\n");
+
+        fclose(file);
+
+        return 1;
+    }
+
+
+    /*
+     * ------------------------------------------------
+     * READ MESSAGE
+     * ------------------------------------------------
+     */
+    for (uint32_t char_index = 0;
+         char_index < message_length;
+         char_index++)
+    {
+        unsigned char value = 0;
+
+        /*
+         * Read 8 pixel LSBs.
+         */
+        for (int bit_index = 7;
+             bit_index >= 0;
+             bit_index--)
+        {
+            unsigned char byte;
+
+            if (fread(&byte, 1, 1, file) != 1)
+            {
+                printf("Error: Could not read hidden message.\n");
+
+                free(message);
+                fclose(file);
+
+                return 1;
+            }
+
+            unsigned char bit = byte & 1;
+
+            value =
+                value |
+                (bit << bit_index);
+        }
+
+        message[char_index] = (char)value;
+    }
+
+
+    /*
+     * Add string terminator.
+     */
+    message[message_length] = '\0';
+
+
+    /*
+     * Display result.
+     */
+    printf("\n");
+    printf("========================================\n");
+    printf("       PIXELVAULT - EXTRACT\n");
+    printf("========================================\n\n");
+
+    printf("Image          : %s\n", filename);
+    printf("Message Length : %u bytes\n", message_length);
+
+    printf("\nHidden Message:\n");
+    printf("%s\n", message);
+
+    printf("\n========================================\n");
+
+
+    free(message);
+    fclose(file);
 
     return 0;
 }
