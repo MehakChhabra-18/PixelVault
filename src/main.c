@@ -5,6 +5,7 @@
 #include "pixel.h"
 #include "encoder.h"
 #include "compare.h"
+#include "detect.h"
 
 int main(int argc, char *argv[])
 {
@@ -12,10 +13,8 @@ int main(int argc, char *argv[])
     {
         printf("PixelVault\n");
         printf("A C-Based Image Steganography & Steganalysis Toolkit\n\n");
-
         printf("Usage:\n");
         printf("  pixelvault <command>\n\n");
-
         printf("Commands:\n");
         printf("  info      Display image information\n");
         printf("  hide      Hide a message inside an image\n");
@@ -24,7 +23,6 @@ int main(int argc, char *argv[])
         printf("  compare   Compare two images\n");
         printf("  analyze   Analyze image properties\n");
         printf("  detect    Perform basic steganalysis\n");
-
         return 0;
     }
 
@@ -100,14 +98,18 @@ int main(int argc, char *argv[])
             printf("Usage: pixelvault analyze <image.bmp>\n");
             return 1;
         }
-
         return analyze_pixels(argv[2]);
     }
 
     /* DETECT */
     else if (strcmp(argv[1], "detect") == 0)
     {
-        printf("DETECT command selected.\n");
+        if(argc<3)
+        {
+            printf("Usage: pixelvault detect <image.bmp>\n");
+            return 1;
+        }
+        return detect_steganography(argv[2]);
     }
 
     /* UNKNOWN */
