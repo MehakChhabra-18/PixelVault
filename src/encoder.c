@@ -1,159 +1,221 @@
 #include <stdio.h>
-#include <stdlib.h>
+#include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "bmp.h"
 #include "encoder.h"
-
+#include "payload.h"
 
 /*
- * Calculate how many bytes of secret data
- * can be stored in the image.
+ * Calculate available payload capacity.
  *
- * We use 1 bit from every actual pixel byte.
+ * 1 bit is stored in every image byte.
  *
- * 8 pixel bytes = 1 message byte.
+ * First 32 bits are reserved for the old
+ * text-message length format.
  */
-int calculate_capacity(const char *filename)
+int calculate_capacity(
+    const char *filename)
 {
-    FILE *file = fopen(filename, "rb");
+    FILE *file =
+        fopen(filename, "rb");
 
     if (file == NULL)
     {
-        printf("Error: Could not open %s\n", filename);
+        printf(
+            "Error: Could not open %s\n",
+            filename);
+
         return -1;
     }
 
     BMPFileHeader file_header;
     BMPInfoHeader info_header;
 
-    fread(&file_header, sizeof(BMPFileHeader), 1, file);
-    fread(&info_header, sizeof(BMPInfoHeader), 1, file);
+    if (
+        fread(
+            &file_header,
+            sizeof(BMPFileHeader),
+            1,
+            file) != 1)
+    {
+        fclose(file);
+
+        return -1;
+    }
+
+    if (
+        fread(
+            &info_header,
+            sizeof(BMPInfoHeader),
+            1,
+            file) != 1)
+    {
+        fclose(file);
+
+        return -1;
+    }
 
     if (file_header.signature != 0x4D42)
     {
-        printf("Error: Not a valid BMP file.\n");
+        printf(
+            "Error: Not a valid BMP file.\n");
+
         fclose(file);
+
         return -1;
     }
 
-    if (info_header.bits_per_pixel != 24 ||
+    if (
+        info_header.bits_per_pixel != 24 ||
         info_header.compression != 0)
     {
-        printf("Error: Only uncompressed 24-bit BMP files are supported.\n");
+        printf(
+            "Error: Only uncompressed "
+            "24-bit BMP files are supported.\n");
+
         fclose(file);
+
         return -1;
     }
 
-    int width = info_header.width;
-    int height = info_header.height;
+    int width =
+        info_header.width;
+
+    int height =
+        info_header.height;
+
+    int bytes_per_row =
+        width * 3;
+
+    int padding =
+        (4 - (bytes_per_row % 4)) % 4;
+
+    int total_pixel_bytes =
+        (bytes_per_row + padding) *
+        height;
 
     /*
-     * Every pixel has:
-     *
-     * Blue  = 1 byte
-     * Green = 1 byte
-     * Red   = 1 byte
-     *
-     * Therefore:
-     *
-     * 3 bytes per pixel.
+     * 4 bytes reserved for old
+     * text-message length.
      */
-    int pixel_bytes = width * height * 3;
-
-    /*
-     * 8 pixel bytes are required
-     * to store 1 message byte.
-     */
-    int capacity = (pixel_bytes / 8)-4;
+    int capacity =
+        (total_pixel_bytes / 8) - 4;
 
     printf("\n");
     printf("========================================\n");
     printf("       PIXELVAULT - IMAGE CAPACITY\n");
     printf("========================================\n\n");
 
-    printf("Image            : %s\n", filename);
-    printf("Width            : %d pixels\n", width);
-    printf("Height           : %d pixels\n", height);
-    printf("Pixel Bytes      : %d\n", pixel_bytes);
-    printf("Message Capacity : %d bytes\n", capacity);
+    printf(
+        "Image            : %s\n",
+        filename);
 
-    printf("\n========================================\n");
+    printf(
+        "Width            : %d pixels\n",
+        width);
+
+    printf(
+        "Height           : %d pixels\n",
+        height);
+
+    printf(
+        "Pixel Bytes      : %d\n",
+        total_pixel_bytes);
+
+    printf(
+        "Message Capacity : %d bytes\n",
+        capacity);
+
+    printf(
+        "\n========================================\n");
 
     fclose(file);
 
     return capacity;
 }
 
-
 /*
- * Hide a message inside a BMP image.
+ * Old text-message hiding functionality.
  *
- * Format stored inside image:
- *
- * [32-bit message length]
- * [message bytes]
+ * Kept so your existing project continues to work.
  */
 int hide_message(
     const char *input_filename,
     const char *output_filename,
-    const char *message
-)
+    const char *message)
 {
-
-    FILE *input = fopen(input_filename, "rb");
-    if(input_filename==NULL || output_filename==NULL || message==NULL)
+    if (
+        input_filename == NULL ||
+        output_filename == NULL ||
+        message == NULL)
     {
-        printf("Error: Invalid input parameters.\n");
+        printf(
+            "Error: Invalid input parameters.\n");
+
         return 1;
     }
 
-    if(strcmp(input_filename, output_filename) == 0)
+    if (
+        strcmp(
+            input_filename,
+            output_filename) == 0)
     {
-        printf("Error: Input and output filenames must be different.\n");
+        printf(
+            "Error: Input and output images "
+            "must be different.\n");
+
         return 1;
     }
+
+    FILE *input =
+        fopen(input_filename, "rb");
 
     if (input == NULL)
     {
-        printf("Error: Could not open input image.\n");
+        printf(
+            "Error: Could not open input image.\n");
+
         return 1;
     }
 
-    FILE *output = fopen(output_filename, "wb");
+    FILE *output =
+        fopen(output_filename, "wb");
 
     if (output == NULL)
     {
-        printf("Error: Could not create output image.\n");
+        printf(
+            "Error: Could not create output image.\n");
+
         fclose(input);
+
         return 1;
     }
 
     BMPFileHeader file_header;
     BMPInfoHeader info_header;
 
-    fread(&file_header, sizeof(BMPFileHeader), 1, input);
-    fread(&info_header, sizeof(BMPInfoHeader), 1, input);
+    fread(
+        &file_header,
+        sizeof(BMPFileHeader),
+        1,
+        input);
 
-    /*
-     * Validate BMP.
-     */
-    if (file_header.signature != 0x4D42)
-    {
-        printf("Error: Invalid BMP file.\n");
+    fread(
+        &info_header,
+        sizeof(BMPInfoHeader),
+        1,
+        input);
 
-        fclose(input);
-        fclose(output);
-
-        return 1;
-    }
-
-    if (info_header.bits_per_pixel != 24 ||
+    if (
+        file_header.signature != 0x4D42 ||
+        info_header.bits_per_pixel != 24 ||
         info_header.compression != 0)
     {
         printf(
-            "Error: Only uncompressed 24-bit BMP files are supported.\n"
-        );
+            "Error: Only uncompressed "
+            "24-bit BMP files are supported.\n");
 
         fclose(input);
         fclose(output);
@@ -161,50 +223,18 @@ int hide_message(
         return 1;
     }
 
-
-    /*
-     * Calculate message length.
-     */
     int message_length = 0;
 
-    while (message[message_length] != '\0')
+    while (
+        message[message_length] != '\0')
     {
         message_length++;
     }
 
-    if(message_length == 0)
+    if (message_length == 0)
     {
-        printf("Error: Message is empty.\n");
-
-        fclose(input);
-        return 1;
-    }
-
-
-    /*
-     * Calculate capacity.
-     */
-    int capacity = calculate_capacity(input_filename);
-
-    if (capacity < 0)
-    {
-        fclose(input);
-        fclose(output);
-
-        return 1;
-    }
-
-
-    /*
-     * We need 4 extra bytes to store
-     * the message length.
-     */
-    if (message_length + 4 > capacity)
-    {
-        printf("\n");
-        printf("Error: Message is too large for this image.\n");
-        printf("Required : %d bytes\n", message_length + 4);
-        printf("Available: %d bytes\n", capacity);
+        printf(
+            "Error: Message cannot be empty.\n");
 
         fclose(input);
         fclose(output);
@@ -212,364 +242,685 @@ int hide_message(
         return 1;
     }
 
+    int capacity =
+        calculate_capacity(input_filename);
+
+    if (message_length > capacity)
+    {
+        printf(
+            "Error: Message is too large "
+            "for this image.\n");
+
+        fclose(input);
+        fclose(output);
+
+        return 1;
+    }
 
     /*
-     * Copy everything before pixel data
-     * exactly as it is.
+     * Copy everything before pixel data.
      */
-    fseek(input, 0, SEEK_SET);
+    fseek(
+        input,
+        0,
+        SEEK_SET);
 
     unsigned char byte;
 
-    for (uint32_t i = 0;
-         i < file_header.pixel_data_offset;
-         i++)
+    for (
+        long i = 0;
+        i < file_header.pixel_data_offset;
+        i++)
     {
         fread(&byte, 1, 1, input);
+
         fwrite(&byte, 1, 1, output);
     }
 
-
     /*
-     * Move to actual pixel data.
-     */
-    fseek(input, file_header.pixel_data_offset, SEEK_SET);
-
-    /*
-     * Skip to output pixel position.
+     * Store message length.
      *
-     * The output file is already positioned
-     * after the copied header.
+     * 32 bits.
      */
+    uint32_t length =
+        (uint32_t)message_length;
 
-
-    /*
-     * ------------------------------------------------
-     * STORE MESSAGE LENGTH
-     * ------------------------------------------------
-     *
-     * Message length is stored using 32 bits.
-     */
-    uint32_t length = (uint32_t)message_length;
-
-    for (int bit_index = 31;
-         bit_index >= 0;
-         bit_index--)
+    for (int i = 31; i >= 0; i--)
     {
-        fread(&byte, 1, 1, input);
+        fread(
+            &byte,
+            1,
+            1,
+            input);
 
         unsigned char bit =
-            (length >> bit_index) & 1;
+            (length >> i) & 1;
 
-        /*
-         * Clear the LSB.
-         */
-        byte = byte & 0xFE;
+        byte =
+            (byte & 0xFE) | bit;
 
-        /*
-         * Put our secret bit into LSB.
-         */
-        byte = byte | bit;
-
-        fwrite(&byte, 1, 1, output);
+        fwrite(
+            &byte,
+            1,
+            1,
+            output);
     }
 
-
     /*
-     * ------------------------------------------------
-     * STORE MESSAGE
-     * ------------------------------------------------
+     * Store actual message.
      */
-    for (int char_index = 0;
-         char_index < message_length;
-         char_index++)
+    int message_index = 0;
+
+    int bit_index = 0;
+
+    for (
+        int i = 0;
+        i < message_length * 8;
+        i++)
     {
-        unsigned char current_char =
-            (unsigned char)message[char_index];
+        fread(
+            &byte,
+            1,
+            1,
+            input);
 
-        /*
-         * Store 8 bits of the character.
-         */
-        for (int bit_index = 7;
-             bit_index >= 0;
-             bit_index--)
+        unsigned char bit =
+            (message[message_index] >>
+             (7 - bit_index)) &
+            1;
+
+        byte =
+            (byte & 0xFE) | bit;
+
+        fwrite(
+            &byte,
+            1,
+            1,
+            output);
+
+        bit_index++;
+
+        if (bit_index == 8)
         {
-            fread(&byte, 1, 1, input);
+            bit_index = 0;
 
-            unsigned char bit =
-                (current_char >> bit_index) & 1;
-
-            /*
-             * Clear existing LSB.
-             */
-            byte = byte & 0xFE;
-
-            /*
-             * Insert secret bit.
-             */
-            byte = byte | bit;
-
-            fwrite(&byte, 1, 1, output);
+            message_index++;
         }
     }
 
-
     /*
-     * ------------------------------------------------
-     * COPY REMAINING IMAGE DATA
-     * ------------------------------------------------
-     *
-     * Everything after the encoded data remains
-     * unchanged.
+     * Copy remaining image bytes.
      */
-    while (fread(&byte, 1, 1, input) == 1)
+    while (
+        fread(&byte, 1, 1, input) == 1)
     {
-        fwrite(&byte, 1, 1, output);
+        fwrite(
+            &byte,
+            1,
+            1,
+            output);
     }
-
 
     fclose(input);
     fclose(output);
 
-
-    /*
-     * Success message.
-     */
     printf("\n");
     printf("========================================\n");
     printf("       PIXELVAULT - HIDE\n");
     printf("========================================\n\n");
 
-    printf("Input Image  : %s\n", input_filename);
-    printf("Output Image : %s\n", output_filename);
-    printf("Message      : %s\n", message);
-    printf("Message Size : %d bytes\n", message_length);
+    printf(
+        "Input Image  : %s\n",
+        input_filename);
 
-    printf("\nMessage successfully hidden!\n");
-    printf("Output saved to: %s\n", output_filename);
+    printf(
+        "Output Image : %s\n",
+        output_filename);
 
-    printf("\n========================================\n");
+    printf(
+        "Message      : %s\n",
+        message);
+
+    printf(
+        "Message Size : %d bytes\n",
+        message_length);
+
+    printf(
+        "\nMessage successfully hidden!\n");
+
+    printf(
+        "Output saved to: %s\n",
+        output_filename);
+
+    printf(
+        "\n========================================\n");
 
     return 0;
 }
 
-
 /*
- * Extract a hidden message from a BMP image.
+ * Hide a binary file inside a BMP.
  */
-int extract_message(const char *filename)
+int hide_file(
+    const char *input_image,
+    const char *output_image,
+    const char *payload_file,
+    int payload_type)
 {
-    FILE *file = fopen(filename, "rb");
-
-    if (file == NULL)
+    if (
+        input_image == NULL ||
+        output_image == NULL ||
+        payload_file == NULL)
     {
-        printf("Error: Could not open image.\n");
+        printf(
+            "Error: Invalid input parameters.\n");
+
         return 1;
     }
 
+    if (
+        strcmp(
+            input_image,
+            output_image) == 0)
+    {
+        printf(
+            "Error: Input and output images "
+            "must be different.\n");
+
+        return 1;
+    }
+
+    /*
+     * Open payload.
+     */
+    FILE *payload =
+        fopen(payload_file, "rb");
+
+    if (payload == NULL)
+    {
+        printf(
+            "Error: Could not open payload file.\n");
+
+        return 1;
+    }
+
+    /*
+     * Determine payload size.
+     */
+    fseek(
+        payload,
+        0,
+        SEEK_END);
+
+    long payload_size =
+        ftell(payload);
+
+    fseek(
+        payload,
+        0,
+        SEEK_SET);
+
+    if (payload_size < 0)
+    {
+        printf(
+            "Error: Could not determine "
+            "payload size.\n");
+
+        fclose(payload);
+
+        return 1;
+    }
+
+    /*
+     * Get filename only.
+     */
+    const char *filename =
+        strrchr(payload_file, '\\');
+
+    if (filename != NULL)
+    {
+        filename++;
+    }
+    else
+    {
+        filename =
+            strrchr(payload_file, '/');
+
+        if (filename != NULL)
+        {
+            filename++;
+        }
+        else
+        {
+            filename =
+                payload_file;
+        }
+    }
+
+    size_t filename_length =
+        strlen(filename);
+
+    if (filename_length > 65535)
+    {
+        printf(
+            "Error: Filename is too long.\n");
+
+        fclose(payload);
+
+        return 1;
+    }
+
+    /*
+     * Calculate checksum.
+     */
+    uint64_t checksum =
+        calculate_file_checksum(
+            payload_file);
+
+    if (checksum == 0)
+    {
+        printf(
+            "Error: Could not calculate "
+            "payload checksum.\n");
+
+        fclose(payload);
+
+        return 1;
+    }
+
+    /*
+     * Open input BMP.
+     */
+    FILE *input =
+        fopen(input_image, "rb");
+
+    if (input == NULL)
+    {
+        printf(
+            "Error: Could not open input image.\n");
+
+        fclose(payload);
+
+        return 1;
+    }
+
+    /*
+     * Open output BMP.
+     */
+    FILE *output =
+        fopen(output_image, "wb");
+
+    if (output == NULL)
+    {
+        printf(
+            "Error: Could not create output image.\n");
+
+        fclose(payload);
+        fclose(input);
+
+        return 1;
+    }
 
     BMPFileHeader file_header;
     BMPInfoHeader info_header;
 
-    fread(&file_header, sizeof(BMPFileHeader), 1, file);
-    fread(&info_header, sizeof(BMPInfoHeader), 1, file);
+    if (
+        fread(
+            &file_header,
+            sizeof(BMPFileHeader),
+            1,
+            input) != 1 ||
+        fread(
+            &info_header,
+            sizeof(BMPInfoHeader),
+            1,
+            input) != 1)
+    {
+        printf(
+            "Error: Could not read BMP header.\n");
 
+        fclose(payload);
+        fclose(input);
+        fclose(output);
+
+        return 1;
+    }
 
     /*
      * Validate BMP.
      */
-    if (file_header.signature != 0x4D42)
-    {
-        printf("Error: Invalid BMP file.\n");
-
-        fclose(file);
-
-        return 1;
-    }
-
-    if (info_header.bits_per_pixel != 24 ||
+    if (
+        file_header.signature != 0x4D42 ||
+        info_header.bits_per_pixel != 24 ||
         info_header.compression != 0)
     {
         printf(
-            "Error: Only uncompressed 24-bit BMP files are supported.\n"
-        );
+            "Error: Only uncompressed "
+            "24-bit BMP files are supported.\n");
 
-        fclose(file);
+        fclose(payload);
+        fclose(input);
+        fclose(output);
 
         return 1;
     }
 
+    /*
+     * Calculate carrier capacity.
+     */
+    int width =
+        info_header.width;
+
+    int height =
+        info_header.height;
+
+    int bytes_per_row =
+        width * 3;
+
+    int padding =
+        (4 - (bytes_per_row % 4)) % 4;
+
+    long total_pixel_bytes =
+        (long)(bytes_per_row + padding) * height;
+
+    long capacity =
+        (total_pixel_bytes / 8);
 
     /*
-     * Move to pixel data.
+     * Required bytes:
+     *
+     * header
+     * filename
+     * payload
+     */
+    long required_bytes =
+        PAYLOAD_HEADER_SIZE +
+        (long)filename_length +
+        payload_size;
+
+    if (required_bytes > capacity)
+    {
+        printf("\n");
+        printf(
+            "Error: Payload is too large "
+            "for this image.\n");
+
+        printf(
+            "Required : %ld bytes\n",
+            required_bytes);
+
+        printf(
+            "Capacity : %ld bytes\n",
+            capacity);
+
+        fclose(payload);
+        fclose(input);
+        fclose(output);
+
+        return 1;
+    }
+
+    /*
+     * Copy BMP header.
      */
     fseek(
-        file,
-        file_header.pixel_data_offset,
-        SEEK_SET
-    );
+        input,
+        0,
+        SEEK_SET);
 
+    unsigned char byte;
+
+    for (
+        long i = 0;
+        i < file_header.pixel_data_offset;
+        i++)
+    {
+        fread(
+            &byte,
+            1,
+            1,
+            input);
+
+        fwrite(
+            &byte,
+            1,
+            1,
+            output);
+    }
 
     /*
-     * ------------------------------------------------
-     * READ MESSAGE LENGTH
-     * ------------------------------------------------
+     * Create metadata header.
+     */
+    unsigned char header[PAYLOAD_HEADER_SIZE];
+
+    write_payload_header(
+        header,
+        (uint8_t)payload_type,
+        (uint16_t)filename_length,
+        (uint64_t)payload_size,
+        checksum);
+
+    /*
+     * Helper variables for bit encoding.
+     */
+    unsigned char current_byte;
+
+    int current_bit = 7;
+
+    /*
+     * Macro-like local logic is avoided.
      *
-     * First 32 pixel LSBs contain
-     * the message length.
+     * First encode the header.
      */
-    uint32_t message_length = 0;
-
-    for (int bit_index = 31;
-         bit_index >= 0;
-         bit_index--)
+    for (
+        int i = 0;
+        i < PAYLOAD_HEADER_SIZE;
+        i++)
     {
-        unsigned char byte;
-
-        if (fread(&byte, 1, 1, file) != 1)
+        for (
+            int bit = 7;
+            bit >= 0;
+            bit--)
         {
-            printf("Error: Could not read hidden data.\n");
-
-            fclose(file);
-
-            return 1;
-        }
-
-        unsigned char bit = byte & 1;
-
-        message_length =
-            message_length |
-            ((uint32_t)bit << bit_index);
-    }
-
-
-    /*
-     * Basic validation.
-     */
-    if (message_length == 0)
-    {
-        printf("No hidden message found.\n");
-
-        fclose(file);
-
-        return 1;
-    }
-
-
-    /*
-     * Prevent unreasonable memory allocation.
-     */
-    if (message_length > 1000000)
-    {
-        printf("Error: Invalid hidden message.\n");
-
-        fclose(file);
-
-        return 1;
-    }
-
-
-    /*
-     * Make sure message can actually fit
-     * inside the image.
-     */
-    int capacity = calculate_capacity(filename);
-
-    if (capacity < 0 ||
-        message_length + 4 > (uint32_t)capacity)
-    {
-        printf("Error: Invalid or corrupted hidden message.\n");
-
-        fclose(file);
-
-        return 1;
-    }
-
-
-    /*
-     * Allocate memory for message.
-     *
-     * +1 is for '\0'.
-     */
-    char *message =
-        (char *)malloc(message_length + 1);
-
-    if (message == NULL)
-    {
-        printf("Error: Memory allocation failed.\n");
-
-        fclose(file);
-
-        return 1;
-    }
-
-
-    /*
-     * ------------------------------------------------
-     * READ MESSAGE
-     * ------------------------------------------------
-     */
-    for (uint32_t char_index = 0;
-         char_index < message_length;
-         char_index++)
-    {
-        unsigned char value = 0;
-
-        /*
-         * Read 8 pixel LSBs.
-         */
-        for (int bit_index = 7;
-             bit_index >= 0;
-             bit_index--)
-        {
-            unsigned char byte;
-
-            if (fread(&byte, 1, 1, file) != 1)
+            if (
+                fread(
+                    &current_byte,
+                    1,
+                    1,
+                    input) != 1)
             {
-                printf("Error: Could not read hidden message.\n");
+                printf(
+                    "Error: Unexpected end "
+                    "of image data.\n");
 
-                free(message);
-                fclose(file);
+                fclose(payload);
+                fclose(input);
+                fclose(output);
 
                 return 1;
             }
 
-            unsigned char bit = byte & 1;
+            unsigned char data_bit =
+                (header[i] >> bit) & 1;
 
-            value =
-                value |
-                (bit << bit_index);
+            current_byte =
+                (current_byte & 0xFE) |
+                data_bit;
+
+            fwrite(
+                &current_byte,
+                1,
+                1,
+                output);
         }
-
-        message[char_index] = (char)value;
     }
 
+    /*
+     * Encode filename.
+     */
+    for (
+        size_t i = 0;
+        i < filename_length;
+        i++)
+    {
+        for (
+            int bit = 7;
+            bit >= 0;
+            bit--)
+        {
+            fread(
+                &current_byte,
+                1,
+                1,
+                input);
+
+            unsigned char data_bit =
+                (filename[i] >> bit) & 1;
+
+            current_byte =
+                (current_byte & 0xFE) |
+                data_bit;
+
+            fwrite(
+                &current_byte,
+                1,
+                1,
+                output);
+        }
+    }
 
     /*
-     * Add string terminator.
+     * Encode payload file.
      */
-    message[message_length] = '\0';
+    unsigned char payload_buffer[4096];
 
+    size_t bytes_read;
+
+    while (
+        (
+            bytes_read =
+                fread(
+                    payload_buffer,
+                    1,
+                    sizeof(payload_buffer),
+                    payload)) > 0)
+    {
+        for (
+            size_t i = 0;
+            i < bytes_read;
+            i++)
+        {
+            for (
+                int bit = 7;
+                bit >= 0;
+                bit--)
+            {
+                if (
+                    fread(
+                        &current_byte,
+                        1,
+                        1,
+                        input) != 1)
+                {
+                    printf(
+                        "Error: Image capacity "
+                        "ended unexpectedly.\n");
+
+                    fclose(payload);
+                    fclose(input);
+                    fclose(output);
+
+                    return 1;
+                }
+
+                unsigned char data_bit =
+                    (payload_buffer[i] >>
+                     bit) &
+                    1;
+
+                current_byte =
+                    (current_byte & 0xFE) |
+                    data_bit;
+
+                fwrite(
+                    &current_byte,
+                    1,
+                    1,
+                    output);
+            }
+        }
+    }
 
     /*
-     * Display result.
+     * Copy remaining image bytes.
      */
+    while (
+        fread(
+            &byte,
+            1,
+            1,
+            input) == 1)
+    {
+        fwrite(
+            &byte,
+            1,
+            1,
+            output);
+    }
+
+    fclose(payload);
+    fclose(input);
+    fclose(output);
+
+    const char *type_name;
+
+    if (payload_type == PAYLOAD_TYPE_TEXT)
+    {
+        type_name = "TEXT";
+    }
+    else if (payload_type == PAYLOAD_TYPE_IMAGE)
+    {
+        type_name = "IMAGE";
+    }
+    else
+    {
+        type_name = "AUDIO";
+    }
+
     printf("\n");
     printf("========================================\n");
-    printf("       PIXELVAULT - EXTRACT\n");
+    printf("       PIXELVAULT - FILE HIDE\n");
     printf("========================================\n\n");
 
-    printf("Image          : %s\n", filename);
-    printf("Message Length : %u bytes\n", message_length);
+    printf(
+        "Carrier Image : %s\n",
+        input_image);
 
-    printf("\nHidden Message:\n");
-    printf("%s\n", message);
+    printf(
+        "Output Image  : %s\n",
+        output_image);
 
-    printf("\n========================================\n");
+    printf(
+        "Payload       : %s\n",
+        payload_file);
 
+    printf(
+        "Payload Type  : %s\n",
+        type_name);
 
-    free(message);
-    fclose(file);
+    printf(
+        "Payload Size  : %ld bytes\n",
+        payload_size);
+
+    printf(
+        "\nFile successfully hidden!\n");
+
+    printf(
+        "Output saved to: %s\n",
+        output_image);
+
+    printf(
+        "\n========================================\n");
 
     return 0;
 }
