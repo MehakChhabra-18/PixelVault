@@ -65,7 +65,7 @@ int calculate_capacity(const char *filename)
      * 8 pixel bytes are required
      * to store 1 message byte.
      */
-    int capacity = pixel_bytes / 8;
+    int capacity = (pixel_bytes / 8)-4;
 
     printf("\n");
     printf("========================================\n");
@@ -100,7 +100,19 @@ int hide_message(
     const char *message
 )
 {
+
     FILE *input = fopen(input_filename, "rb");
+    if(input_filename==NULL || output_filename==NULL || message==NULL)
+    {
+        printf("Error: Invalid input parameters.\n");
+        return 1;
+    }
+
+    if(strcmp(input_filename, output_filename) == 0)
+    {
+        printf("Error: Input and output filenames must be different.\n");
+        return 1;
+    }
 
     if (input == NULL)
     {
@@ -158,6 +170,14 @@ int hide_message(
     while (message[message_length] != '\0')
     {
         message_length++;
+    }
+
+    if(message_length == 0)
+    {
+        printf("Error: Message is empty.\n");
+
+        fclose(input);
+        return 1;
     }
 
 
