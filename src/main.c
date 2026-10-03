@@ -6,6 +6,7 @@
 #include "encoder.h"
 #include "compare.h"
 #include "detect.h"
+#include "forensic.h"
 
 int main(int argc, char *argv[])
 {
@@ -23,6 +24,7 @@ int main(int argc, char *argv[])
         printf("  compare   Compare two images\n");
         printf("  analyze   Analyze image properties\n");
         printf("  detect    Perform basic steganalysis\n");
+        printf("  forensic  Perform forensic analysis\n");
         return 0;
     }
 
@@ -110,6 +112,16 @@ int main(int argc, char *argv[])
             return 1;
         }
         return detect_steganography(argv[2]);
+    }
+
+    else if(strcmp(argv[1], "forensic") == 0)
+    {
+        if(argc<4)
+        {
+            printf("Usage: pixelvault forensic <original.bmp> <suspect.bmp>\n");
+            return 1;
+        }
+        return forensic_analysis(argv[2],argv[3]);
     }
 
     /* UNKNOWN */
