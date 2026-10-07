@@ -268,7 +268,7 @@ int hide_message(
     unsigned char byte;
 
     for (
-        long i = 0;
+        uint32_t i = 0;
         i < file_header.pixel_data_offset;
         i++)
     {
@@ -671,7 +671,7 @@ int hide_file(
     unsigned char byte;
 
     for (
-        long i = 0;
+        uint32_t i = 0;
         i < file_header.pixel_data_offset;
         i++)
     {
@@ -704,8 +704,6 @@ int hide_file(
      * Helper variables for bit encoding.
      */
     unsigned char current_byte;
-
-    int current_bit = 7;
 
     /*
      * Macro-like local logic is avoided.

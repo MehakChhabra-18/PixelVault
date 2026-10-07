@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 #include "bmp.h"
 #include "payload.h"
@@ -175,8 +176,7 @@ int extract_file(
      * Read filename.
      */
     if (
-        metadata.filename_length == 0 ||
-        metadata.filename_length > 65535)
+        metadata.filename_length == 0 )
     {
         printf(
             "Error: Invalid payload filename length.\n");
@@ -262,8 +262,7 @@ int extract_file(
         filename);
 
     printf(
-        "Payload Size  : %llu bytes\n",
-        (unsigned long long)
+        "Payload Size  : %" PRIu64 " bytes\n",
             metadata.file_size);
 
     /*
